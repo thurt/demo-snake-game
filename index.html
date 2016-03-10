@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Snake Demo</title>
+    <style type="text/css">
+    * {
+      padding: 0;
+      margin: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+      overflow:hidden;
+      font-family: sans-serif;
+    }
+
+    #content {
+      width: 100%;
+      height: 100%;
+    }
+
+    #menu {
+      width: 100%;
+      background-color: lightsteelblue;
+    }
+
+    #score .red, .green, .blue, .purple {
+      color: white;
+      width: 2em;
+    }
+
+    #buttons {
+      height: 100%;
+    }
+
+    #game {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    input {
+      display: inline-block;
+      margin: 3px;
+      padding: 3px;
+      vertical-align: middle;
+      cursor: pointer;
+    }
+
+    canvas {
+      outline: 1px solid black;
+    }
+
+    fieldset {
+      padding: 3px;
+      margin: 3px;
+      height: inherit;
+    }
+
+    .red {
+      background-color: red;
+    }
+
+    .green {
+      background-color: green;
+    }
+
+    .blue {
+      background-color: blue;
+    }
+
+    .purple {
+      background-color: purple;
+    }
+
+    .grid {
+      display: flex;
+    }
+
+    .grid-cell {
+      flex: 1;
+    }
+  </style>
+  </head>
+  <body>
+    <div id="content">
+      <div id="menu" class="grid">
+        <fieldset id="score" class="grid-cell">
+          <legend>Score</legend>
+          <table>
+            <tbody>
+              <tr>
+                <td class="red">0</td>
+                <td class="green">0</td>
+                <td class="blue">0</td>
+                <td class="purple">0</td>
+              </tr>
+            </tbody>
+          </table>
+        </fieldset>
+        <fieldset id="status" class="grid-cell">
+          <legend>Status</legend>
+          <span>Not Started</span>
+        </fieldset>
+        <div id="buttons" class="grid" style="align-self:center;">
+          <input type="button" class="grid-cell" id="start" value="Start" />
+          <input type="button" class="grid-cell" id="reset" value="Reset"/>
+        </div>
+      </div>
+      <div id="game">
+        <canvas id="canvas">
+        </canvas>
+      </div>
+    </div>
+
+    <script>
+      const start_btn = document.getElementById('start')
+      const reset_btn = document.getElementById('reset')
+      const status = document.querySelector('#status span')
+      const canvas = document.getElementById('canvas')
+      const game = document.getElementById('game')
+      const menu = document.getElementById('menu')
+
+      const pW = 8 // piece width
+      const pH = 8 // piece height
+
+      var W = game.clientWidth
+      while (W % pW !== 0) W--
+
+      var H = game.clientHeight - menu.clientHeight
+      while (H % pH !== 0) H--
+      canvas.width = game.width = W
+      canvas.height = game.height = H
+
+      const ctx = canvas.getContext('2d')
+
+      var piecesWide = W / pW
+      var piecesHigh = H / pH
+
+      var board = []
+      resetBoard()
+
+      function Snake(isAI, color, dir, x, y, score_el) {
+        this.color = color
+        this.x = x
+        this.y = y
+        this.dir = dir
+        this.isAI = isAI
+        Object.defineProperty(this, 'score', {
+          get() {
+            return Number(score_el.textContent)
+          },
+          set(new_score) {
+            score_el.textContent = new_score
+          }
+        })
+
+        this.reset = function() {
+          this.x = x
+          this.y = y
+          this.dir = dir
+        }
+      }
+
+      const coord = {
+        w_1_2: Math.floor(piecesWide / 2),
+        w_1_4: Math.floor(piecesWide / 4),
+        w_3_4: 3 * Math.floor(piecesWide / 4),
+        h_1_2: Math.floor(piecesHigh / 2),
+        h_1_4: Math.floor(piecesHigh / 4),
+        h_3_4: 3 * Math.floor(piecesHigh / 4)
+      }
+
+      var PlayerSnake = new Snake(true, 'red', 'right', coord.w_1_2, coord.h_1_4, document.querySelector('#score .red'))
+
+      var Snakes = [
+        PlayerSnake,
+        new Snake(true, 'green', 'up', coord.w_1_4, coord.h_1_2, document.querySelector('#score .green'))
+
+        ,
+        new Snake(true, 'blue', 'left', coord.w_1_2, coord.h_3_4, document.querySelector('#score .blue')),
+        new Snake(true, 'purple', 'down', coord.w_3_4, coord.h_1_2, document.querySelector('#score .purple'))
+      ]
+
+      function PlayerMove(e) {
+        e.stopPropagation()
+        if (PlayerSnake.dir_changed) return
+
+        // up 38, right 39, down 40, left 37
+        switch (e.which) {
+          case 38:
+            if (PlayerSnake.dir !== 'up' && PlayerSnake.dir !== 'down') {
+              PlayerSnake.dir = 'up'
+              PlayerSnake.dir_changed = true
+            }
+            break
+          case 39:
+            if (PlayerSnake.dir !== 'right' && PlayerSnake.dir !== 'left') {
+              PlayerSnake.dir = 'right'
+              PlayerSnake.dir_changed = true
+            }
+            break
+          case 40:
+            if (PlayerSnake.dir !== 'down' && PlayerSnake.dir !== 'up') {
+              PlayerSnake.dir = 'down'
+              PlayerSnake.dir_changed = true
+            }
+            break
+          case 37:
+            if (PlayerSnake.dir !== 'left' && PlayerSnake.dir !== 'right') {
+              PlayerSnake.dir = 'left'
+              PlayerSnake.dir_changed = true
+            }
+            break
+        }
+      }
+
+      function AIMove(snake) {
+        var odds = .1
+        var i = 1
+
+        function changeDirLeftRight() {
+          var left = freeSpace(snake.x - 1, snake.y)
+          var right = freeSpace(snake.x + 1, snake.y)
+          if (left && right) {
+            if (Math.round(Math.random())) {
+              snake.dir = 'left'
+            } else {
+              snake.dir = 'right'
+            }
+          } else if (left) {
+            snake.dir = 'left'
+          } else if (right) {
+            snake.dir = 'right'
+          }
+        }
+
+        function changeDirUpDown() {
+          var up = freeSpace(snake.x, snake.y - 1)
+          var down = freeSpace(snake.x, snake.y + 1)
+          if (up && down) {
+            if (Math.round(Math.random())) {
+              snake.dir = 'up'
+            } else {
+              snake.dir = 'down'
+            }
+          } else if (up) {
+            snake.dir = 'up'
+          } else if (down) {
+            snake.dir = 'down'
+          }
+        }
+
+        switch (snake.dir) {
+          case 'up':
+            if (!freeSpace(snake.x, snake.y - 1)) {
+              changeDirLeftRight()
+            }
+            break
+          case 'right':
+            if (!freeSpace(snake.x + 1, snake.y)) {
+              changeDirUpDown()
+            }
+            break
+          case 'down':
+            if (!freeSpace(snake.x, snake.y + 1)) {
+              changeDirLeftRight()
+            }
+            break
+          case 'left':
+            if (!freeSpace(snake.x - 1, snake.y)) {
+              changeDirUpDown()
+            }
+            break
+        }
+      }
+
+      var DeadSnakes = []
+      var DyingSnakes = []
+
+      function move(Snake) {
+        switch (Snake.dir) {
+          case 'up': Snake.y -= 1; break;
+          case 'right': Snake.x += 1; break;
+          case 'down': Snake.y += 1; break;
+          case 'left': Snake.x -= 1; break;
+        }
+
+        if (Snake === PlayerSnake && Snake.dir_changed) Snake.dir_changed = false
+      }
+
+      function step() {
+        Snakes.forEach(snake => {
+          if (snake.isAI) AIMove(snake)
+          move(snake)
+        })
+
+        for (let i = 0;  i < Snakes.length; i++) {
+          let snake = Snakes[i]
+          for (let j = i + 1; j < Snakes.length; j++) {
+            let _snake = Snakes[j]
+            if (snake.x === _snake.x && snake.y === _snake.y) {
+              DyingSnakes.push(Snakes.splice(i, 1)[0]); i--; j--
+              DyingSnakes.push(Snakes.splice(j, 1)[0])
+              addToBoard(snake.x, snake.y, 'black')
+            }
+          }
+        }
+
+        for (let i = 0; i < Snakes.length; i++) {
+          let snake = Snakes[i]
+          if (!addToBoard(snake.x, snake.y, snake.color)) {
+            DyingSnakes.push(Snakes.splice(i, 1)[0]); i--
+          }
+        }
+
+        if (Snakes.length <= 1) end()
+        else {
+          DyingSnakes.forEach(snake => DeadSnakes.push(snake))
+          DyingSnakes = []
+          setTimeout(step, 50)
+        }
+      }
+
+      function addToBoard(x, y, color) {
+        if (freeSpace(x, y)) {
+          board[x][y] = 1
+          addRect(x, y, color)
+          return true
+        }
+      }
+
+      function resetBoard() {
+        for (let i = 0; i < piecesWide; i++) {
+          board[i] = []
+          for (let j = 0; j < piecesHigh; j++) {
+            board[i][j] = 0
+          }
+        }
+      }
+
+      function freeSpace(x, y) {
+        var bx = board[x]
+        if (bx === undefined) return false
+        var bxy = bx[y]
+        if (bxy === undefined || bxy === 1) return false
+        return true
+      }
+
+      function addRect(x, y, color) {
+        ctx.moveTo(x * pW, y * pH)
+        ctx.fillStyle = color
+        ctx.fillRect(x * pW, y * pH, pW, pH)
+      }
+
+      function start() {
+        Snakes.forEach(snake => addToBoard(snake.x, snake.y, snake.color))
+        setTimeout(step, 1000)
+      }
+
+      function end() {
+        window.removeEventListener('keydown', PlayerMove)
+
+        if (Snakes.length === 0) status.textContent = 'It\'s a tie !'
+        else {
+          // get the last surviving snake
+          Snakes[0].score += 1
+          status.textContent = Snakes[0].color + ' wins !'
+        }
+
+        // Reset Snakes
+        DyingSnakes.forEach(snake => Snakes.push(snake))
+        DyingSnakes = []
+        DeadSnakes.forEach(snake => Snakes.push(snake))
+        DeadSnakes = []
+        Snakes.forEach(snake => snake.reset())
+
+        resetBoard()
+
+        start_btn.disabled = false
+        reset_btn.disabled = false
+      }
+
+      start_btn.addEventListener('click', (e) => {
+        start_btn.disabled = true
+        reset_btn.disabled = true
+
+        ctx.clearRect(0, 0, W, H)
+        window.addEventListener('keydown', PlayerMove)
+        status.textContent = 'In progress'
+        start()
+      })
+
+      reset_btn.addEventListener('click', (e) => {
+        Snakes.forEach(snake => snake.score = 0)
+      })
+
+      // Triangles
+      /* point up
+      ctx.beginPath()
+  		ctx.moveTo(0,10)
+      ctx.lineTo(5, 0)
+      ctx.lineTo(10, 10)
+      ctx.closePath()
+      ctx.fill()
+      */
+
+      /* point right
+      ctx.beginPath()
+  		ctx.moveTo(0,0)
+      ctx.lineTo(10, 5)
+      ctx.lineTo(0, 10)
+      ctx.closePath()
+      ctx.fill()
+      */
+
+      /* point down
+      ctx.beginPath()
+  		ctx.moveTo(0,0)
+      ctx.lineTo(10, 0)
+      ctx.lineTo(5, 10)
+      ctx.closePath()
+      ctx.fill()
+      */
+
+      /* point left
+      ctx.beginPath()
+      ctx.moveTo(10,0)
+      ctx.lineTo(10,10)
+      ctx.lineTo(0,5)
+      ctx.closePath()
+      ctx.fill()
+      */
+    </script>
+  </body>
+</html>
