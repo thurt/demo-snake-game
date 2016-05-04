@@ -99,9 +99,9 @@
             </tbody>
           </table>
         </fieldset>
-        <fieldset id="status" class="grid-cell">
+        <fieldset class="grid-cell">
           <legend>Status</legend>
-          <span>Not Started</span>
+          <span id="game_status">Not Started</span>
         </fieldset>
         <div id="buttons" class="grid" style="align-self:center;">
           <input type="button" class="grid-cell" id="start" value="Start" />
@@ -114,324 +114,382 @@
       </div>
     </div>
 
-    <script>
-      const start_btn = document.getElementById('start')
-      const reset_btn = document.getElementById('reset')
-      const status = document.querySelector('#status span')
-      const canvas = document.getElementById('canvas')
-      const game = document.getElementById('game')
-      const menu = document.getElementById('menu')
+<script>
+  var start_btn = document.getElementById('start')
+  var reset_btn = document.getElementById('reset')
+  var game_status = document.getElementById('game_status')
+  var canvas = document.getElementById('canvas')
+  var game = document.getElementById('game')
+  var menu = document.getElementById('menu')
 
-      const pW = 8 // piece width
-      const pH = 8 // piece height
+  var pW = 8 // piece width
+  var pH = 8 // piece height
 
-      var W = game.clientWidth
-      while (W % pW !== 0) W--
+  var W = game.clientWidth
+  while (W % pW !== 0) W--
 
-      var H = game.clientHeight - menu.clientHeight
-      while (H % pH !== 0) H--
-      canvas.width = game.width = W
-      canvas.height = game.height = H
+  var H = game.clientHeight - menu.clientHeight
+  while (H % pH !== 0) H--
+  canvas.width = game.width = W
+  canvas.height = game.height = H
 
-      const ctx = canvas.getContext('2d')
+  var ctx = canvas.getContext('2d')
 
-      var piecesWide = W / pW
-      var piecesHigh = H / pH
+  var piecesWide = W / pW
+  var piecesHigh = H / pH
 
-      var board = []
-      resetBoard()
+  var board = []
+  resetBoard()
 
-      function Snake(isAI, color, dir, x, y, score_el) {
-        this.color = color
-        this.x = x
-        this.y = y
-        this.dir = dir
-        this.isAI = isAI
-        Object.defineProperty(this, 'score', {
-          get() {
-            return Number(score_el.textContent)
-          },
-          set(new_score) {
-            score_el.textContent = new_score
-          }
-        })
+  function Snake(isAI, color, dir, x, y, score_el) {
+    this.color = color
+    this.x = x
+    this.y = y
+    this.dir = dir
+    this.isAI = isAI
+    Object.defineProperty(this, 'score', {
+      get() {
+        return Number(score_el.textContent)
+      },
+      set(new_score) {
+        score_el.textContent = new_score
+      }
+    })
 
-        this.reset = function() {
-          this.x = x
-          this.y = y
-          this.dir = dir
+    this.reset = function() {
+      this.x = x
+      this.y = y
+      this.dir = dir
+    }
+  }
+
+  var coord = {
+    w_1_2: Math.floor(piecesWide / 2),
+    w_1_4: Math.floor(piecesWide / 4),
+    w_3_4: 3 * Math.floor(piecesWide / 4),
+    h_1_2: Math.floor(piecesHigh / 2),
+    h_1_4: Math.floor(piecesHigh / 4),
+    h_3_4: 3 * Math.floor(piecesHigh / 4)
+  }
+
+  var PlayerSnake = new Snake(false, 'red', 'right', coord.w_1_2, coord.h_1_4, document.querySelector('#score .red'))
+
+  var Snakes = [
+    PlayerSnake,
+    new Snake(true, 'green', 'up', coord.w_1_4, coord.h_1_2, document.querySelector('#score .green')),
+    new Snake(true, 'blue', 'left', coord.w_1_2, coord.h_3_4, document.querySelector('#score .blue')),
+    new Snake(true, 'purple', 'down', coord.w_3_4, coord.h_1_2, document.querySelector('#score .purple'))
+  ]
+
+  function PlayerMove(e) {
+    e.stopPropagation()
+    if (PlayerSnake.dir_changed) return
+
+    // up 38, right 39, down 40, left 37
+    switch (e.which) {
+      case 38:
+        if (PlayerSnake.dir !== 'up' && PlayerSnake.dir !== 'down') {
+          PlayerSnake.dir = 'up'
+          PlayerSnake.dir_changed = true
+        }
+        break
+      case 39:
+        if (PlayerSnake.dir !== 'right' && PlayerSnake.dir !== 'left') {
+          PlayerSnake.dir = 'right'
+          PlayerSnake.dir_changed = true
+        }
+        break
+      case 40:
+        if (PlayerSnake.dir !== 'down' && PlayerSnake.dir !== 'up') {
+          PlayerSnake.dir = 'down'
+          PlayerSnake.dir_changed = true
+        }
+        break
+      case 37:
+        if (PlayerSnake.dir !== 'left' && PlayerSnake.dir !== 'right') {
+          PlayerSnake.dir = 'left'
+          PlayerSnake.dir_changed = true
+        }
+        break
+    }
+  }
+
+  function AI_ChooseDir(snake, lookahead) {
+    //var odds = .1
+    checkSpaceAhead(lookahead)
+
+    function checkSpaceAhead(i) {
+      var x = snake.x, y = snake.y, changeDir
+
+      switch (snake.dir) {
+        case 'up':
+          y -= i
+          changeDir = changeDirLeftRight
+          break
+        case 'right':
+          x += i
+          changeDir = changeDirUpDown
+          break
+        case 'down':
+          y += i
+          changeDir = changeDirLeftRight
+          break
+        case 'left':
+          x -= i
+          changeDir = changeDirUpDown
+          break
+      }
+
+      if (i === 0) {
+        // if we get here, it means we didn't find any spaces that aren't free,
+        // so lets think about making a move in a different direction to add AI randomness
+        if (Math.random() < 0.01) {
+          snake.dir = changeDir(1, 50) // this will be a more thoughtful move
+        }
+      } else if (!freeSpace(x, y)) {
+        if (Math.random() < 0.75) {
+          snake.dir = changeDir(1, 50)
+        } else {
+          checkSpaceAhead(--i)
+        }
+      } else {
+       // if (Math.random() < .01) {
+      //    snake.dir = changeDir(1, 4)
+      //  } else {
+          checkSpaceAhead(--i)
+      //  }
+      }
+    }
+
+    function changeDirLeftRight(i, lookahead_max) {
+      var left, right
+
+      //if (Math.random() < .01) return snake.dir
+      if (i > lookahead_max) { // there are no obstacles on either side of the max lookahead distance, I can't tell which direction is better without more info, so pick a random one
+        if (Math.round(Math.random())) {
+          return 'left'
+        } else {
+          return 'right'
         }
       }
 
-      const coord = {
-        w_1_2: Math.floor(piecesWide / 2),
-        w_1_4: Math.floor(piecesWide / 4),
-        w_3_4: 3 * Math.floor(piecesWide / 4),
-        h_1_2: Math.floor(piecesHigh / 2),
-        h_1_4: Math.floor(piecesHigh / 4),
-        h_3_4: 3 * Math.floor(piecesHigh / 4)
+      left = freeSpace(snake.x - i, snake.y)
+      right = freeSpace(snake.x + i, snake.y)
+
+      if (left && right) { // we are clear on either side at i distance, so look one more ahead
+        return changeDirLeftRight(++i, lookahead_max)
+      } else if (left) { // left side is clear, but right is not--go left
+        return 'left'
+      } else if (right) { // right side is clear, but left is not--go right
+        return 'right'
+      } else if (i === 1) { // there are obstacles immediately on both sides, so keep going ahead
+        return snake.dir
+      } else { // both directions have equal obstacles at i > 1, I cant tell which dir is better without more info, so just pick a random direction
+        if (Math.round(Math.random())) {
+          return 'left'
+        } else {
+          return 'right'
+        }
       }
+    }
 
-      var PlayerSnake = new Snake(true, 'red', 'right', coord.w_1_2, coord.h_1_4, document.querySelector('#score .red'))
-
-      var Snakes = [
-        PlayerSnake,
-        new Snake(true, 'green', 'up', coord.w_1_4, coord.h_1_2, document.querySelector('#score .green'))
-
-        ,
-        new Snake(true, 'blue', 'left', coord.w_1_2, coord.h_3_4, document.querySelector('#score .blue')),
-        new Snake(true, 'purple', 'down', coord.w_3_4, coord.h_1_2, document.querySelector('#score .purple'))
-      ]
-
-      function PlayerMove(e) {
-        e.stopPropagation()
-        if (PlayerSnake.dir_changed) return
-
-        // up 38, right 39, down 40, left 37
-        switch (e.which) {
-          case 38:
-            if (PlayerSnake.dir !== 'up' && PlayerSnake.dir !== 'down') {
-              PlayerSnake.dir = 'up'
-              PlayerSnake.dir_changed = true
-            }
-            break
-          case 39:
-            if (PlayerSnake.dir !== 'right' && PlayerSnake.dir !== 'left') {
-              PlayerSnake.dir = 'right'
-              PlayerSnake.dir_changed = true
-            }
-            break
-          case 40:
-            if (PlayerSnake.dir !== 'down' && PlayerSnake.dir !== 'up') {
-              PlayerSnake.dir = 'down'
-              PlayerSnake.dir_changed = true
-            }
-            break
-          case 37:
-            if (PlayerSnake.dir !== 'left' && PlayerSnake.dir !== 'right') {
-              PlayerSnake.dir = 'left'
-              PlayerSnake.dir_changed = true
-            }
-            break
+    function changeDirUpDown(i, lookahead_max) {
+      //if (Math.random() < .05) return snake.dir
+      if (i > lookahead_max) {
+        if (Math.round(Math.random())) {
+          return 'up'
+        } else {
+          return 'down'
         }
       }
 
-      function AIMove(snake) {
-        var odds = .1
-        var i = 1
+      var up = freeSpace(snake.x, snake.y - i)
+      var down = freeSpace(snake.x, snake.y + i)
 
-        function changeDirLeftRight() {
-          var left = freeSpace(snake.x - 1, snake.y)
-          var right = freeSpace(snake.x + 1, snake.y)
-          if (left && right) {
-            if (Math.round(Math.random())) {
-              snake.dir = 'left'
-            } else {
-              snake.dir = 'right'
-            }
-          } else if (left) {
-            snake.dir = 'left'
-          } else if (right) {
-            snake.dir = 'right'
-          }
-        }
-
-        function changeDirUpDown() {
-          var up = freeSpace(snake.x, snake.y - 1)
-          var down = freeSpace(snake.x, snake.y + 1)
-          if (up && down) {
-            if (Math.round(Math.random())) {
-              snake.dir = 'up'
-            } else {
-              snake.dir = 'down'
-            }
-          } else if (up) {
-            snake.dir = 'up'
-          } else if (down) {
-            snake.dir = 'down'
-          }
-        }
-
-        switch (snake.dir) {
-          case 'up':
-            if (!freeSpace(snake.x, snake.y - 1)) {
-              changeDirLeftRight()
-            }
-            break
-          case 'right':
-            if (!freeSpace(snake.x + 1, snake.y)) {
-              changeDirUpDown()
-            }
-            break
-          case 'down':
-            if (!freeSpace(snake.x, snake.y + 1)) {
-              changeDirLeftRight()
-            }
-            break
-          case 'left':
-            if (!freeSpace(snake.x - 1, snake.y)) {
-              changeDirUpDown()
-            }
-            break
+      if (up && down) {
+        return changeDirUpDown(++i, lookahead_max)
+      } else if (up) {
+        return 'up'
+      } else if (down) {
+        return 'down'
+      } else if (i === 1) {
+        return snake.dir
+      } else { // both up and down appear equal in obstacles, so just pick one now
+        if (Math.round(Math.random())) {
+          return 'up'
+        } else {
+          return 'down'
         }
       }
+    }
+  }
 
-      var DeadSnakes = []
-      var DyingSnakes = []
+  var DeadSnakes = []
+  var DyingSnakes = []
 
-      function move(Snake) {
-        switch (Snake.dir) {
-          case 'up': Snake.y -= 1; break;
-          case 'right': Snake.x += 1; break;
-          case 'down': Snake.y += 1; break;
-          case 'left': Snake.x -= 1; break;
-        }
+  function move(Snake) {
+    switch (Snake.dir) {
+      case 'up': Snake.y -= 1; break;
+      case 'right': Snake.x += 1; break;
+      case 'down': Snake.y += 1; break;
+      case 'left': Snake.x -= 1; break;
+    }
+    if (Snake === PlayerSnake && Snake.dir_changed) {
+      Snake.dir_changed = false
+    }
+  }
 
-        if (Snake === PlayerSnake && Snake.dir_changed) Snake.dir_changed = false
+  function step() {
+    var i, j, snake, snake1, snake2
+
+    // perform all snake position changes before we decide if anyone dies
+    Snakes.forEach(snake => {
+      if (snake.isAI) {
+        AI_ChooseDir(snake, 3) // AI decides whether it is going to change direction
       }
+      move(snake)
+    })
 
-      function step() {
-        Snakes.forEach(snake => {
-          if (snake.isAI) AIMove(snake)
-          move(snake)
-        })
-
-        for (let i = 0;  i < Snakes.length; i++) {
-          let snake = Snakes[i]
-          for (let j = i + 1; j < Snakes.length; j++) {
-            let _snake = Snakes[j]
-            if (snake.x === _snake.x && snake.y === _snake.y) {
-              DyingSnakes.push(Snakes.splice(i, 1)[0]); i--; j--
-              DyingSnakes.push(Snakes.splice(j, 1)[0])
-              addToBoard(snake.x, snake.y, 'black')
-            }
-          }
-        }
-
-        for (let i = 0; i < Snakes.length; i++) {
-          let snake = Snakes[i]
-          if (!addToBoard(snake.x, snake.y, snake.color)) {
-            DyingSnakes.push(Snakes.splice(i, 1)[0]); i--
-          }
-        }
-
-        if (Snakes.length <= 1) end()
-        else {
-          DyingSnakes.forEach(snake => DeadSnakes.push(snake))
-          DyingSnakes = []
-          setTimeout(step, 50)
+    // if two snake heads are at the same position, then they both die
+    for (i = 0;  i < Snakes.length; i++) {
+      snake1 = Snakes[i]
+      for (j = i + 1; j < Snakes.length; j++) {
+        snake2 = Snakes[j]
+        if (snake1.x === snake2.x && snake1.y === snake2.y) {
+          DyingSnakes.push(Snakes.splice(i, 1)[0]); i--; j--
+          DyingSnakes.push(Snakes.splice(j, 1)[0])
+          addToBoard(snake1.x, snake1.y, 'black')
         }
       }
+    }
 
-      function addToBoard(x, y, color) {
-        if (freeSpace(x, y)) {
-          board[x][y] = 1
-          addRect(x, y, color)
-          return true
-        }
+    // if the snakes current position cannot be added to the board, then it dies
+    for (i = 0; i < Snakes.length; i++) {
+      snake = Snakes[i]
+      if (!addToBoard(snake.x, snake.y, snake.color)) {
+        DyingSnakes.push(Snakes.splice(i, 1)[0]); i--
+        addRect(snake.x, snake.y, 'black')
       }
+    }
 
-      function resetBoard() {
-        for (let i = 0; i < piecesWide; i++) {
-          board[i] = []
-          for (let j = 0; j < piecesHigh; j++) {
-            board[i][j] = 0
-          }
-        }
+    // victory condition
+    if (Snakes.length <= 1) end()
+    else {
+      DyingSnakes.forEach(snake => DeadSnakes.push(snake))
+      DyingSnakes = []
+      setTimeout(step, 50)
+    }
+  }
+
+  function addToBoard(x, y, color) {
+    if (freeSpace(x, y)) {
+      board[x][y] = 1
+      addRect(x, y, color)
+      return true
+    }
+  }
+
+  function resetBoard() {
+    for (var i = 0; i < piecesWide; i++) {
+      board[i] = []
+      for (var j = 0; j < piecesHigh; j++) {
+        board[i][j] = 0
       }
+    }
+  }
 
-      function freeSpace(x, y) {
-        var bx = board[x]
-        if (bx === undefined) return false
-        var bxy = bx[y]
-        if (bxy === undefined || bxy === 1) return false
-        return true
-      }
+  function freeSpace(x, y) {
+    var bx = board[x]
+    if (bx === undefined) return false
+    var bxy = bx[y]
+    if (bxy === undefined || bxy === 1) return false
+    return true
+  }
 
-      function addRect(x, y, color) {
-        ctx.moveTo(x * pW, y * pH)
-        ctx.fillStyle = color
-        ctx.fillRect(x * pW, y * pH, pW, pH)
-      }
+  function addRect(x, y, color) {
+    ctx.moveTo(x * pW, y * pH)
+    ctx.fillStyle = color
+    ctx.fillRect(x * pW, y * pH, pW, pH)
+  }
 
-      function start() {
-        Snakes.forEach(snake => addToBoard(snake.x, snake.y, snake.color))
-        setTimeout(step, 1000)
-      }
+  function start() {
+    Snakes.forEach(snake => addToBoard(snake.x, snake.y, snake.color))
+    setTimeout(step, 1000)
+  }
 
-      function end() {
-        window.removeEventListener('keydown', PlayerMove)
+  function end() {
+    window.removeEventListener('keydown', PlayerMove)
 
-        if (Snakes.length === 0) status.textContent = 'It\'s a tie !'
-        else {
-          // get the last surviving snake
-          Snakes[0].score += 1
-          status.textContent = Snakes[0].color + ' wins !'
-        }
+    if (Snakes.length === 0) game_status.textContent = 'It\'s a tie !'
+    else {
+      // get the last surviving snake
+      Snakes[0].score += 1
+      game_status.textContent = Snakes[0].color + ' wins !'
+    }
 
-        // Reset Snakes
-        DyingSnakes.forEach(snake => Snakes.push(snake))
-        DyingSnakes = []
-        DeadSnakes.forEach(snake => Snakes.push(snake))
-        DeadSnakes = []
-        Snakes.forEach(snake => snake.reset())
+    // Reset Snakes
+    DyingSnakes.forEach(snake => Snakes.push(snake))
+    DyingSnakes = []
+    DeadSnakes.forEach(snake => Snakes.push(snake))
+    DeadSnakes = []
+    Snakes.forEach(snake => snake.reset())
 
-        resetBoard()
+    resetBoard()
 
-        start_btn.disabled = false
-        reset_btn.disabled = false
-      }
+    start_btn.disabled = false
+    reset_btn.disabled = false
+  }
 
-      start_btn.addEventListener('click', (e) => {
-        start_btn.disabled = true
-        reset_btn.disabled = true
+  start_btn.addEventListener('click', (e) => {
+    start_btn.disabled = true
+    reset_btn.disabled = true
 
-        ctx.clearRect(0, 0, W, H)
-        window.addEventListener('keydown', PlayerMove)
-        status.textContent = 'In progress'
-        start()
-      })
+    ctx.clearRect(0, 0, W, H)
+    window.addEventListener('keydown', PlayerMove)
+    game_status.textContent = 'In progress'
+    start()
+  })
 
-      reset_btn.addEventListener('click', (e) => {
-        Snakes.forEach(snake => snake.score = 0)
-      })
+  reset_btn.addEventListener('click', (e) => {
+    Snakes.forEach(snake => snake.score = 0)
+  })
 
-      // Triangles
-      /* point up
-      ctx.beginPath()
-  		ctx.moveTo(0,10)
-      ctx.lineTo(5, 0)
-      ctx.lineTo(10, 10)
-      ctx.closePath()
-      ctx.fill()
-      */
+  // Triangles
+  /* point up
+  ctx.beginPath()
+	ctx.moveTo(0,10)
+  ctx.lineTo(5, 0)
+  ctx.lineTo(10, 10)
+  ctx.closePath()
+  ctx.fill()
+  */
 
-      /* point right
-      ctx.beginPath()
-  		ctx.moveTo(0,0)
-      ctx.lineTo(10, 5)
-      ctx.lineTo(0, 10)
-      ctx.closePath()
-      ctx.fill()
-      */
+  /* point right
+  ctx.beginPath()
+	ctx.moveTo(0,0)
+  ctx.lineTo(10, 5)
+  ctx.lineTo(0, 10)
+  ctx.closePath()
+  ctx.fill()
+  */
 
-      /* point down
-      ctx.beginPath()
-  		ctx.moveTo(0,0)
-      ctx.lineTo(10, 0)
-      ctx.lineTo(5, 10)
-      ctx.closePath()
-      ctx.fill()
-      */
+  /* point down
+  ctx.beginPath()
+	ctx.moveTo(0,0)
+  ctx.lineTo(10, 0)
+  ctx.lineTo(5, 10)
+  ctx.closePath()
+  ctx.fill()
+  */
 
-      /* point left
-      ctx.beginPath()
-      ctx.moveTo(10,0)
-      ctx.lineTo(10,10)
-      ctx.lineTo(0,5)
-      ctx.closePath()
-      ctx.fill()
-      */
-    </script>
+  /* point left
+  ctx.beginPath()
+  ctx.moveTo(10,0)
+  ctx.lineTo(10,10)
+  ctx.lineTo(0,5)
+  ctx.closePath()
+  ctx.fill()
+  */
+</script>
   </body>
 </html>
